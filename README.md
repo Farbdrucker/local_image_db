@@ -1,6 +1,6 @@
 # local_image_db
 
-[![CI](https://github.com/YOUR_USERNAME/local_image_db/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/local_image_db/actions/workflows/ci.yml)
+[![CI](https://github.com/Farbdrucker/local_image_db/actions/workflows/ci.yml/badge.svg)](https://github.com/Farbdrucker/local_image_db/actions/workflows/ci.yml)
 ![Rust](https://img.shields.io/badge/rust-2024-orange?logo=rust)
 ![SQLite](https://img.shields.io/badge/database-SQLite-blue?logo=sqlite)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
