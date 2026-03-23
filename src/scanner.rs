@@ -4,15 +4,21 @@ use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
 use walkdir::WalkDir;
 
 use crate::config::ScanConfig;
 use crate::db::Database;
 use crate::models::ImageRecord;
+use crate::progress::{ProgressMsg, ProgressTx};
 
 /// Scan `root` for images, index them into the DB under `drive_id`.
 /// Returns the count of indexed images.
+///
+/// When `progress` is `Some`, sends [`ProgressMsg`] instead of drawing
+/// indicatif bars (TUI path). When `None`, uses indicatif directly (CLI path).
 pub fn run_scan(
     db: &Database,
     root: &Path,
@@ -20,10 +26,11 @@ pub fn run_scan(
     config: &ScanConfig,
     force_rehash: bool,
     verbose: bool,
+    progress: Option<ProgressTx>,
 ) -> Result<usize> {
     let ext_set: HashSet<String> = config.extensions.iter().cloned().collect();
 
-    if verbose {
+    if verbose && progress.is_none() {
         println!("Scanning {}...", root.display());
     }
 
@@ -44,37 +51,78 @@ pub fn run_scan(
         .collect();
 
     if entries.is_empty() {
-        println!("No image files found in {}.", root.display());
+        if progress.is_none() {
+            println!("No image files found in {}.", root.display());
+        } else if let Some(tx) = &progress {
+            let _ = tx.send(ProgressMsg::Finished {
+                processed: 0,
+                errors: 0,
+            });
+        }
         return Ok(0);
     }
 
-    let pb = ProgressBar::new(entries.len() as u64);
-    pb.set_style(
-        ProgressStyle::with_template(
-            "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}",
-        )
-        .unwrap()
-        .progress_chars("=>-"),
-    );
+    let total = entries.len() as u64;
 
     // Phase 2: parallel metadata + EXIF extraction
     let min_size = config.min_file_size;
-    let records: Vec<ImageRecord> = entries
-        .par_iter()
-        .progress_with(pb.clone())
-        .filter_map(|path| {
-            match build_record(path, root, drive_id, min_size, force_rehash) {
-                Ok(Some(r)) => Some(r),
-                Ok(None) => None, // skipped (too small, etc.)
-                Err(e) => {
-                    pb.println(format!("  WARN: {}: {e}", path.display()));
-                    None
+    let records: Vec<ImageRecord> = if let Some(ref tx) = progress {
+        // TUI path: send ProgressMsg, no indicatif
+        let _ = tx.send(ProgressMsg::Started {
+            total,
+            label: root.display().to_string(),
+        });
+        let counter = Arc::new(AtomicU64::new(0));
+        entries
+            .par_iter()
+            .filter_map(|path| {
+                let result = build_record(path, root, drive_id, min_size, force_rehash);
+                let current = counter.fetch_add(1, Ordering::Relaxed) + 1;
+                let detail = path.file_name().map(|n| n.to_string_lossy().to_string());
+                let _ = tx.send(ProgressMsg::Tick {
+                    current,
+                    total,
+                    detail,
+                });
+                match result {
+                    Ok(Some(r)) => Some(r),
+                    Ok(None) => None,
+                    Err(e) => {
+                        let _ = tx.send(ProgressMsg::Warning {
+                            message: format!("{}: {e}", path.display()),
+                        });
+                        None
+                    }
                 }
-            }
-        })
-        .collect();
-
-    pb.finish_and_clear();
+            })
+            .collect()
+    } else {
+        // CLI path: use indicatif as before
+        let pb = ProgressBar::new(total);
+        pb.set_style(
+            ProgressStyle::with_template(
+                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}",
+            )
+            .unwrap()
+            .progress_chars("=>-"),
+        );
+        let records = entries
+            .par_iter()
+            .progress_with(pb.clone())
+            .filter_map(
+                |path| match build_record(path, root, drive_id, min_size, force_rehash) {
+                    Ok(Some(r)) => Some(r),
+                    Ok(None) => None,
+                    Err(e) => {
+                        pb.println(format!("  WARN: {}: {e}", path.display()));
+                        None
+                    }
+                },
+            )
+            .collect();
+        pb.finish_and_clear();
+        records
+    };
 
     let count = records.len();
 
@@ -84,7 +132,14 @@ pub fn run_scan(
 
     db.update_drive_scanned_at(drive_id)?;
 
-    println!("Indexed {count} images from {}.", root.display());
+    if let Some(tx) = progress {
+        let _ = tx.send(ProgressMsg::Finished {
+            processed: count as u64,
+            errors: 0,
+        });
+    } else {
+        println!("Indexed {count} images from {}.", root.display());
+    }
     Ok(count)
 }
 

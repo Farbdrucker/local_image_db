@@ -22,7 +22,7 @@ pub struct ImageRecord {
     pub blake3_hash: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CopyCandidate {
     pub source: ImageRecord,
     pub destination_path: std::path::PathBuf,

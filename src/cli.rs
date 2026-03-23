@@ -92,6 +92,9 @@ pub enum Commands {
 
     /// Show resolved configuration
     Config,
+
+    /// Launch the interactive TUI
+    Tui,
 }
 
 #[derive(Subcommand, Debug)]

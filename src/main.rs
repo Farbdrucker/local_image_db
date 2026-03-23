@@ -4,7 +4,9 @@ mod copy;
 mod db;
 mod hasher;
 mod models;
+mod progress;
 mod scanner;
+mod tui;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -53,6 +55,7 @@ fn main() -> Result<()> {
                 &config.scan,
                 force_rehash,
                 cli.verbose,
+                None,
             )?;
         }
 
@@ -84,6 +87,7 @@ fn main() -> Result<()> {
                     verbose: cli.verbose,
                 },
                 &config,
+                None,
             )?;
         }
 
@@ -115,6 +119,7 @@ fn main() -> Result<()> {
                     verbose: cli.verbose,
                 },
                 &config,
+                None,
             )?;
         }
 
@@ -123,7 +128,7 @@ fn main() -> Result<()> {
             missing_only,
         } => {
             let db = open_db(&config)?;
-            hasher::run_hash_command(&db, drive, missing_only, cli.verbose)?;
+            hasher::run_hash_command_cli(&db, drive, missing_only, cli.verbose)?;
         }
 
         Commands::Drives { action } => {
@@ -174,6 +179,11 @@ fn main() -> Result<()> {
 
         Commands::Config => {
             config.print_resolved(cli.config.as_deref());
+        }
+
+        Commands::Tui => {
+            let db = open_db(&config)?;
+            tui::run(db, config)?;
         }
     }
 

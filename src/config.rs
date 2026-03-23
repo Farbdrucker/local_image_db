@@ -3,7 +3,7 @@ use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     pub sd_path: Option<PathBuf>,
@@ -13,7 +13,7 @@ pub struct Config {
     pub copy: CopyConfig,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ScanConfig {
     pub extensions: Vec<String>,
@@ -23,13 +23,13 @@ pub struct ScanConfig {
     pub min_file_size: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DbConfig {
     pub path: PathBuf,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CopyConfig {
     pub path_template: String,

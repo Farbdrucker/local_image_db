@@ -16,3 +16,5 @@ toml = "0.8"
 anyhow = "1"
 indicatif = { version = "0.17", features = ["rayon"] }
 directories = "5"
+ratatui     = { version = "0.30", features = ["crossterm"] }
+crossterm   = "0.29"

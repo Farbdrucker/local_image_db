@@ -288,11 +288,16 @@ impl Database {
         Ok(rows)
     }
 
-    #[cfg(test)]
-    pub fn image_count(&self) -> Result<i64> {
+    /// Total number of indexed images. Available in all builds (used by TUI stats screen).
+    pub fn image_count_pub(&self) -> Result<i64> {
         Ok(self
             .conn
             .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))?)
+    }
+
+    #[cfg(test)]
+    pub fn image_count(&self) -> Result<i64> {
+        self.image_count_pub()
     }
 }
 

@@ -8,6 +8,7 @@ use crate::config::Config;
 use crate::db::Database;
 use crate::hasher::hash_file;
 use crate::models::{CopyCandidate, DuplicateStatus, ImageRecord};
+use crate::progress::{ProgressMsg, ProgressTx};
 use crate::scanner::{build_sd_records, destination_path};
 
 pub struct RunOptions<'a> {
@@ -20,8 +21,122 @@ pub struct RunOptions<'a> {
     pub verbose: bool,
 }
 
+/// Build the list of copy candidates from the SD card without performing any copies.
+/// Returns `(to_copy, already_exists)`.
+pub fn build_candidates(
+    db: &Database,
+    opts: &RunOptions<'_>,
+    config: &Config,
+    progress: Option<ProgressTx>,
+) -> Result<(Vec<CopyCandidate>, Vec<CopyCandidate>)> {
+    let sd_images = build_sd_records(opts.sd_path, &config.scan, opts.verbose)?;
+
+    if let Some(tx) = &progress {
+        let _ = tx.send(ProgressMsg::Started {
+            total: sd_images.len() as u64,
+            label: "classify".to_string(),
+        });
+    }
+
+    let mut to_copy = Vec::new();
+    let mut already = Vec::new();
+
+    for (idx, mut img) in sd_images.into_iter().enumerate() {
+        let dest = destination_path(opts.drive_root, &img, &config.copy.path_template);
+        let status = classify(db, &mut img, opts.use_hash)?;
+
+        if let Some(tx) = &progress {
+            let _ = tx.send(ProgressMsg::Tick {
+                current: idx as u64 + 1,
+                total: 0, // total unknown at this point (dynamic)
+                detail: Some(img.filename.clone()),
+            });
+        }
+
+        let candidate = CopyCandidate {
+            source: img,
+            destination_path: dest,
+            status: status.clone(),
+        };
+        if matches!(status, DuplicateStatus::AlreadyExists { .. }) {
+            already.push(candidate);
+        } else {
+            to_copy.push(candidate);
+        }
+    }
+
+    if let Some(tx) = &progress {
+        let _ = tx.send(ProgressMsg::Finished {
+            processed: to_copy.len() as u64,
+            errors: 0,
+        });
+    }
+
+    Ok((to_copy, already))
+}
+
+/// Execute the copy phase for a pre-built list of candidates.
+/// Returns `(copied, errors)`.
+pub fn run_copy_phase(
+    db: &Database,
+    to_copy: &[&CopyCandidate],
+    drive_id: i64,
+    progress: Option<ProgressTx>,
+) -> Result<(usize, usize)> {
+    let total = to_copy.len() as u64;
+
+    if let Some(tx) = &progress {
+        let _ = tx.send(ProgressMsg::Started {
+            total,
+            label: "copy".to_string(),
+        });
+    }
+
+    let mut copied = 0usize;
+    let mut errors = 0usize;
+
+    for (idx, candidate) in to_copy.iter().enumerate() {
+        if let Some(tx) = &progress {
+            let _ = tx.send(ProgressMsg::Tick {
+                current: idx as u64 + 1,
+                total,
+                detail: Some(candidate.source.filename.clone()),
+            });
+        }
+
+        match copy_file(candidate, drive_id, db) {
+            Ok(()) => copied += 1,
+            Err(e) => {
+                if let Some(tx) = &progress {
+                    let _ = tx.send(ProgressMsg::Warning {
+                        message: format!("{}: {e}", candidate.source.filename),
+                    });
+                }
+                errors += 1;
+            }
+        }
+    }
+
+    if let Some(tx) = progress {
+        let _ = tx.send(ProgressMsg::Finished {
+            processed: copied as u64,
+            errors: errors as u64,
+        });
+    }
+
+    Ok((copied, errors))
+}
+
 /// Run the `check` subcommand (dry_run = true) or `copy` subcommand (dry_run = false).
-pub fn run(db: &Database, opts: RunOptions<'_>, config: &Config) -> Result<()> {
+///
+/// When `progress` is `Some`, sends [`ProgressMsg`] instead of drawing
+/// indicatif bars (TUI path). When `None`, uses indicatif directly (CLI path).
+pub fn run(
+    db: &Database,
+    opts: RunOptions<'_>,
+    config: &Config,
+    progress: Option<ProgressTx>,
+) -> Result<()> {
     let RunOptions {
         sd_path,
         drive_root,
@@ -31,11 +146,14 @@ pub fn run(db: &Database, opts: RunOptions<'_>, config: &Config) -> Result<()> {
         dry_run,
         verbose,
     } = opts;
+
     // Scan SD card in-memory (not inserted into DB)
     let sd_images = build_sd_records(sd_path, &config.scan, verbose)?;
 
     if sd_images.is_empty() {
-        println!("No image files found on SD card at {}.", sd_path.display());
+        if progress.is_none() {
+            println!("No image files found on SD card at {}.", sd_path.display());
+        }
         return Ok(());
     }
 
@@ -62,47 +180,83 @@ pub fn run(db: &Database, opts: RunOptions<'_>, config: &Config) -> Result<()> {
         .collect();
 
     if dry_run {
-        print_report(&to_copy, &already, format);
+        if progress.is_none() {
+            print_report(&to_copy, &already, format);
+        }
         return Ok(());
     }
 
     // Actual copy
-    print_report(&to_copy, &already, format);
+    if progress.is_none() {
+        print_report(&to_copy, &already, format);
+    }
 
     if to_copy.is_empty() {
-        println!("Nothing to copy.");
+        if progress.is_none() {
+            println!("Nothing to copy.");
+        }
         return Ok(());
     }
 
-    let pb = ProgressBar::new(to_copy.len() as u64);
-    pb.set_style(
-        ProgressStyle::with_template(
-            "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}",
-        )
-        .unwrap()
-        .progress_chars("=>-"),
-    );
+    if let Some(ref tx) = progress {
+        let _ = tx.send(ProgressMsg::Started {
+            total: to_copy.len() as u64,
+            label: "copy".to_string(),
+        });
+    }
 
     let mut copied = 0usize;
     let mut errors = 0usize;
 
-    for candidate in &to_copy {
-        if verbose {
-            pb.set_message(candidate.source.filename.clone());
-        }
-
-        match copy_file(candidate, drive_id, db) {
-            Ok(()) => copied += 1,
-            Err(e) => {
-                pb.println(format!("  ERROR: {}: {e}", candidate.source.filename));
-                errors += 1;
+    if let Some(ref tx) = progress {
+        // TUI path
+        for (idx, candidate) in to_copy.iter().enumerate() {
+            let _ = tx.send(ProgressMsg::Tick {
+                current: idx as u64 + 1,
+                total: to_copy.len() as u64,
+                detail: Some(candidate.source.filename.clone()),
+            });
+            match copy_file(candidate, drive_id, db) {
+                Ok(()) => copied += 1,
+                Err(e) => {
+                    let _ = tx.send(ProgressMsg::Warning {
+                        message: format!("{}: {e}", candidate.source.filename),
+                    });
+                    errors += 1;
+                }
             }
         }
-        pb.inc(1);
+        let _ = tx.send(ProgressMsg::Finished {
+            processed: copied as u64,
+            errors: errors as u64,
+        });
+    } else {
+        // CLI path: indicatif progress bar
+        let pb = ProgressBar::new(to_copy.len() as u64);
+        pb.set_style(
+            ProgressStyle::with_template(
+                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}",
+            )
+            .unwrap()
+            .progress_chars("=>-"),
+        );
+        for candidate in &to_copy {
+            if verbose {
+                pb.set_message(candidate.source.filename.clone());
+            }
+            match copy_file(candidate, drive_id, db) {
+                Ok(()) => copied += 1,
+                Err(e) => {
+                    pb.println(format!("  ERROR: {}: {e}", candidate.source.filename));
+                    errors += 1;
+                }
+            }
+            pb.inc(1);
+        }
+        pb.finish_and_clear();
+        println!("Copied {copied} files. Errors: {errors}.");
     }
 
-    pb.finish_and_clear();
-    println!("Copied {copied} files. Errors: {errors}.");
     Ok(())
 }
 
@@ -189,7 +343,7 @@ fn copy_file(candidate: &CopyCandidate, drive_id: i64, db: &Database) -> Result<
             .unwrap_or_default()
             .to_string_lossy()
             .to_string(),
-        relative_path: dst.to_string_lossy().to_string(), // simplified; could strip drive root
+        relative_path: dst.to_string_lossy().to_string(),
         absolute_path: dst.to_string_lossy().to_string(),
         file_size: copied_size,
         capture_date: candidate.source.capture_date,
@@ -254,7 +408,6 @@ fn print_table(to_copy: &[&CopyCandidate], already: &[&CopyCandidate]) {
 }
 
 fn print_json(to_copy: &[&CopyCandidate], already: &[&CopyCandidate]) {
-    // Simple hand-rolled JSON to avoid adding serde_json dependency here
     println!("{{");
     println!("  \"to_copy\": [");
     for (i, c) in to_copy.iter().enumerate() {
