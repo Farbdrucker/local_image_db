@@ -2,7 +2,10 @@ use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(name = "local_image_db", about = "Track and copy images between SD card and external drive")]
+#[command(
+    name = "local_image_db",
+    about = "Track and copy images between SD card and external drive"
+)]
 pub struct Cli {
     /// Override config file path
     #[arg(short, long, env = "LOCAL_IMAGE_DB_CONFIG")]

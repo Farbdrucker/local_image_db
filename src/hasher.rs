@@ -74,7 +74,12 @@ pub fn run_hash_command(
     for (_id, abs_path) in &targets {
         let path = Path::new(abs_path);
         if verbose {
-            pb.set_message(path.file_name().unwrap_or_default().to_string_lossy().to_string());
+            pb.set_message(
+                path.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string(),
+            );
         }
         match hash_file(path) {
             Ok(hash) => {

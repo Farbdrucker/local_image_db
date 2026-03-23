@@ -35,16 +35,22 @@ pub struct CopyConfig {
     pub path_template: String,
 }
 
-
 impl Default for ScanConfig {
     fn default() -> Self {
         Self {
             extensions: vec![
-                "jpg".into(), "jpeg".into(), "png".into(),
-                "arw".into(), "srf".into(), "sr2".into(),
-                "cr2".into(), "cr3".into(), "crw".into(),
+                "jpg".into(),
+                "jpeg".into(),
+                "png".into(),
+                "arw".into(),
+                "srf".into(),
+                "sr2".into(),
+                "cr2".into(),
+                "cr3".into(),
+                "crw".into(),
                 "raf".into(),
-                "nef".into(), "nrw".into(),
+                "nef".into(),
+                "nrw".into(),
             ],
             threads: 0,
             min_file_size: 102_400, // 100 KB

@@ -95,8 +95,7 @@ fn build_record(
     min_size: u64,
     compute_hash: bool,
 ) -> Result<Option<ImageRecord>> {
-    let meta = std::fs::metadata(path)
-        .with_context(|| format!("stat {}", path.display()))?;
+    let meta = std::fs::metadata(path).with_context(|| format!("stat {}", path.display()))?;
 
     let file_size = meta.len();
     if file_size < min_size {
@@ -117,9 +116,7 @@ fn build_record(
 
     let absolute_path = path.to_string_lossy().to_string();
 
-    let file_mtime = meta
-        .modified()
-        .unwrap_or(SystemTime::UNIX_EPOCH);
+    let file_mtime = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
     let file_mtime: DateTime<Utc> = file_mtime.into();
 
     let capture_date = read_exif_date(path);
@@ -197,7 +194,9 @@ pub fn build_sd_records(
     let records: Vec<ImageRecord> = entries
         .par_iter()
         .filter_map(|path| {
-            build_record(path, sd_path, 0, config.min_file_size, false).ok().flatten()
+            build_record(path, sd_path, 0, config.min_file_size, false)
+                .ok()
+                .flatten()
         })
         .collect();
 
@@ -205,15 +204,11 @@ pub fn build_sd_records(
 }
 
 /// Build the destination path for a file: `drive_root/yyyy/mm/dd/filename`
-pub fn destination_path(
-    drive_root: &Path,
-    image: &ImageRecord,
-    path_template: &str,
-) -> PathBuf {
-    let date = image
-        .capture_date
-        .map(|d| d.date())
-        .unwrap_or_else(|| Utc.from_utc_datetime(&image.file_mtime.naive_utc()).date_naive());
+pub fn destination_path(drive_root: &Path, image: &ImageRecord, path_template: &str) -> PathBuf {
+    let date = image.capture_date.map(|d| d.date()).unwrap_or_else(|| {
+        Utc.from_utc_datetime(&image.file_mtime.naive_utc())
+            .date_naive()
+    });
 
     let subdir = path_template
         .replace("{year}", &format!("{:04}", date.format("%Y")))

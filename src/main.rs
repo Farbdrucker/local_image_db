@@ -33,7 +33,9 @@ fn main() -> Result<()> {
         } => {
             let scan_path = path
                 .or_else(|| config.external_drive_path.clone())
-                .context("No drive path provided. Pass a path or set external_drive_path in config.")?;
+                .context(
+                    "No drive path provided. Pass a path or set external_drive_path in config.",
+                )?;
 
             let db = open_db(&config)?;
             let label = drive_label.unwrap_or_else(|| {
@@ -63,9 +65,9 @@ fn main() -> Result<()> {
             let sd_path = config
                 .effective_sd_path(sd)
                 .context("No SD path provided. Pass --sd or set sd_path in config.")?;
-            let drive_path = config
-                .effective_drive_path(drive)
-                .context("No drive path provided. Pass --drive or set external_drive_path in config.")?;
+            let drive_path = config.effective_drive_path(drive).context(
+                "No drive path provided. Pass --drive or set external_drive_path in config.",
+            )?;
 
             let db = open_db(&config)?;
             let drive_id = ensure_drive_indexed(&db, &drive_path)?;
@@ -94,9 +96,9 @@ fn main() -> Result<()> {
             let sd_path = config
                 .effective_sd_path(sd)
                 .context("No SD path provided. Pass --sd or set sd_path in config.")?;
-            let drive_path = config
-                .effective_drive_path(drive)
-                .context("No drive path provided. Pass --drive or set external_drive_path in config.")?;
+            let drive_path = config.effective_drive_path(drive).context(
+                "No drive path provided. Pass --drive or set external_drive_path in config.",
+            )?;
 
             let db = open_db(&config)?;
             let drive_id = ensure_drive_indexed(&db, &drive_path)?;
@@ -150,7 +152,10 @@ fn main() -> Result<()> {
                 DrivesAction::Add { path, label } => {
                     let db_path_str = path.to_string_lossy();
                     let id = db.upsert_drive(&label, &db_path_str)?;
-                    println!("Drive '{label}' at {} registered with id {id}.", path.display());
+                    println!(
+                        "Drive '{label}' at {} registered with id {id}.",
+                        path.display()
+                    );
                 }
                 DrivesAction::Remove { path } => {
                     let path_str = path.to_string_lossy();
@@ -158,7 +163,10 @@ fn main() -> Result<()> {
                     if n == 0 {
                         println!("No drive found at {}.", path.display());
                     } else {
-                        println!("Drive at {} removed (all indexed images deleted).", path.display());
+                        println!(
+                            "Drive at {} removed (all indexed images deleted).",
+                            path.display()
+                        );
                     }
                 }
             }

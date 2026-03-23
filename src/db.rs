@@ -110,20 +110,21 @@ impl Database {
     }
 
     pub fn list_drives(&self) -> Result<Vec<DriveRecord>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, label, root_path, last_scanned_at FROM drives ORDER BY id",
-        )?;
-        let records = stmt.query_map([], |row| {
-            Ok(DriveRecord {
-                id: row.get(0)?,
-                label: row.get(1)?,
-                root_path: row.get(2)?,
-                last_scanned_at: row
-                    .get::<_, Option<String>>(3)?
-                    .and_then(|s| s.parse::<DateTime<Utc>>().ok()),
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, label, root_path, last_scanned_at FROM drives ORDER BY id")?;
+        let records = stmt
+            .query_map([], |row| {
+                Ok(DriveRecord {
+                    id: row.get(0)?,
+                    label: row.get(1)?,
+                    root_path: row.get(2)?,
+                    last_scanned_at: row
+                        .get::<_, Option<String>>(3)?
+                        .and_then(|s| s.parse::<DateTime<Utc>>().ok()),
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(records)
     }
 
@@ -178,7 +179,8 @@ impl Database {
                 img.relative_path,
                 img.absolute_path,
                 img.file_size as i64,
-                img.capture_date.map(|d| d.format("%Y-%m-%dT%H:%M:%S").to_string()),
+                img.capture_date
+                    .map(|d| d.format("%Y-%m-%dT%H:%M:%S").to_string()),
                 img.file_mtime.to_rfc3339(),
                 img.blake3_hash,
             ],
@@ -212,7 +214,8 @@ impl Database {
                     img.relative_path,
                     img.absolute_path,
                     img.file_size as i64,
-                    img.capture_date.map(|d| d.format("%Y-%m-%dT%H:%M:%S").to_string()),
+                    img.capture_date
+                        .map(|d| d.format("%Y-%m-%dT%H:%M:%S").to_string()),
                     img.file_mtime.to_rfc3339(),
                     img.blake3_hash,
                 ])?;
@@ -227,22 +230,23 @@ impl Database {
         let mut stmt = self.conn.prepare(
             "SELECT absolute_path, file_size, blake3_hash FROM images WHERE filename = ?1",
         )?;
-        let rows = stmt.query_map(params![filename], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, i64>(1)? as u64,
-                row.get::<_, Option<String>>(2)?,
-            ))
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+        let rows = stmt
+            .query_map(params![filename], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)? as u64,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
 
     /// Check if any image matches the given blake3 hash.
     pub fn find_by_hash(&self, hash: &str) -> Result<Option<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT absolute_path FROM images WHERE blake3_hash = ?1 LIMIT 1",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT absolute_path FROM images WHERE blake3_hash = ?1 LIMIT 1")?;
         let mut rows = stmt.query(params![hash])?;
         if let Some(row) = rows.next()? {
             Ok(Some(row.get(0)?))
@@ -261,10 +265,7 @@ impl Database {
     }
 
     /// Return all images on a given drive that are missing a hash.
-    pub fn images_missing_hash(
-        &self,
-        drive_id: Option<i64>,
-    ) -> Result<Vec<(i64, String)>> {
+    pub fn images_missing_hash(&self, drive_id: Option<i64>) -> Result<Vec<(i64, String)>> {
         let (sql, drive_id_val) = if let Some(id) = drive_id {
             (
                 "SELECT id, absolute_path FROM images
@@ -279,16 +280,19 @@ impl Database {
             )
         };
         let mut stmt = self.conn.prepare(sql)?;
-        let rows = stmt.query_map(params![drive_id_val], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+        let rows = stmt
+            .query_map(params![drive_id_val], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
 
     #[cfg(test)]
     pub fn image_count(&self) -> Result<i64> {
-        Ok(self.conn.query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))?)
+        Ok(self
+            .conn
+            .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))?)
     }
 }
 
@@ -337,7 +341,12 @@ mod tests {
     fn test_upsert_and_find_image() {
         let db = Database::open_in_memory().unwrap();
         let drive_id = db.upsert_drive("Drive", "/mnt/d").unwrap();
-        let img = sample_image(drive_id, "DSC_0001.NEF", "/mnt/d/2024/DSC_0001.NEF", 15_000_000);
+        let img = sample_image(
+            drive_id,
+            "DSC_0001.NEF",
+            "/mnt/d/2024/DSC_0001.NEF",
+            15_000_000,
+        );
         db.upsert_image(&img).unwrap();
 
         let results = db.find_by_filename("DSC_0001.NEF").unwrap();
@@ -391,7 +400,8 @@ mod tests {
     fn test_capture_date_roundtrip() {
         let db = Database::open_in_memory().unwrap();
         let drive_id = db.upsert_drive("Drive", "/mnt/d").unwrap();
-        let capture = NaiveDateTime::parse_from_str("2024:07:15 14:30:00", "%Y:%m:%d %H:%M:%S").unwrap();
+        let capture =
+            NaiveDateTime::parse_from_str("2024:07:15 14:30:00", "%Y:%m:%d %H:%M:%S").unwrap();
         let mut img = sample_image(drive_id, "photo.cr2", "/mnt/d/photo.cr2", 10_000_000);
         img.capture_date = Some(capture);
         db.upsert_image(&img).unwrap();

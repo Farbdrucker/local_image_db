@@ -107,11 +107,7 @@ pub fn run(db: &Database, opts: RunOptions<'_>, config: &Config) -> Result<()> {
 }
 
 /// Two-pass duplicate classification.
-fn classify(
-    db: &Database,
-    img: &mut ImageRecord,
-    use_hash: bool,
-) -> Result<DuplicateStatus> {
+fn classify(db: &Database, img: &mut ImageRecord, use_hash: bool) -> Result<DuplicateStatus> {
     let matches = db.find_by_filename(&img.filename)?;
 
     if matches.is_empty() {
@@ -229,11 +225,7 @@ fn resolve_collision(dst: &Path) -> PathBuf {
     }
 }
 
-fn print_report(
-    to_copy: &[&CopyCandidate],
-    already: &[&CopyCandidate],
-    format: &OutputFormat,
-) {
+fn print_report(to_copy: &[&CopyCandidate], already: &[&CopyCandidate], format: &OutputFormat) {
     match format {
         OutputFormat::Table => print_table(to_copy, already),
         OutputFormat::Json => print_json(to_copy, already),
